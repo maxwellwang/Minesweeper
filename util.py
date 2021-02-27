@@ -161,6 +161,7 @@ def query(coordinates, board, mines):
 
     :param coordinates: cell coordinates to query
     :param board: minesweeper board
+    :param mines: set of mines
     :return: new board
     """
     if not valid_coordinates(coordinates, len(board)):
