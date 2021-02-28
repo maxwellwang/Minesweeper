@@ -105,13 +105,29 @@ def query(coordinates, board, mines):
         return board
     if board[i][j] == 'M':
         print(str(coordinates) + ' was flagged as mined, we shouldn\'t search it')
+        return board
 
-    if (i, j) in mines:
-        board[i][j] = 'X'
-    else:
-        board[i][j] = str(get_clue((i, j), mines, len(board)))
+    board[i][j] = 'X' if (i, j) in mines else str(get_clue((i, j), mines, len(board)))
 
     return board
+
+
+def random_query(board, mines):
+    """
+    Randomly queries hidden cell on board.
+
+    :param board: minesweeper board
+    :param mines: set of mine coordinates
+    :return: new board, random coordinates queried
+    """
+    d = len(board)
+    hidden_coordinates_list = []
+    for i in range(d):
+        for j in range(d):
+            if board[i][j] == '?':
+                hidden_coordinates_list.append((i, j))
+    i, j = hidden_coordinates_list[randrange(0, len(hidden_coordinates_list))]
+    return query((i, j), board, mines), (i, j)
 
 
 def completed(board):
@@ -129,26 +145,25 @@ def completed(board):
     return True
 
 
-def print_score(board, mines):
+def get_score(board, mines):
     """
     Calculates and prints score = # correctly flagged mines / # mines.
 
     :param board: minesweeper board
     :param mines: set of mine coordinates
-    :return: nothing
+    :return: # correctly flagged mines / # mines
     """
     num_correctly_flagged_mines = 0
     for i, j in mines:
         if board[i][j] == 'M':
             num_correctly_flagged_mines += 1
-    score = round(num_correctly_flagged_mines / len(mines), 2)
-    print('Score: ' + str(score))
+    return round(num_correctly_flagged_mines / len(mines), 2)
 
 
 class BasicAgent:
     def __init__(self, arg1, arg2):
         """
-        Prepare the info that basic agent needs to make inferences. This can be initalized using d, n or board, mines.
+        Prepare the info that basic agent needs to make inferences. This can be initialized using d, n or board, mines.
 
         :param arg1: either d: board dimension, or board: minesweeper board
         :param arg2: either n: number of mines, or mines: set of mines
@@ -164,23 +179,22 @@ class BasicAgent:
         self.num_safe_board = [[0 for _ in range(d)] for _ in range(d)]
         self.num_mines_board = [[0 for _ in range(d)] for _ in range(d)]
         self.num_hidden_board = [[len(get_neighbor_coordinates((i, j), d)) for j in range(d)] for i in range(d)]
+        self.score = 0
 
     def infer(self):
         """
         Use individual cell inference to mark hidden cells as safe or mined. If we can mark any safe cells and the board
         hasn't been completed yet, repeat inference.
 
-        :return: if infer was able to identify any cell as mined or safe
+        :return: nothing
         """
         d = len(self.board)
         new_clues = False  # new clue(s) revealed: if board isn't completed then we should infer again
-        successful_infer = False
         for i in range(d):
             for j in range(d):
                 if self.board[i][j].isdigit():
                     if int(self.board[i][j]) - self.num_mines_board[i][j] == self.num_hidden_board[i][j]:
                         # every hidden neighbor is a mine
-                        successful_infer = True
                         for ni, nj in get_neighbor_coordinates((i, j), d):
                             if self.board[ni][nj] == '?':
                                 self.board[ni][nj] = 'M'
@@ -189,18 +203,16 @@ class BasicAgent:
                     elif len(get_neighbor_coordinates((i, j), d)) - int(self.board[i][j]) - self.num_safe_board[i][j] == \
                             self.num_hidden_board[i][j]:
                         # every hidden neighbor is safe
-                        successful_infer = True
                         for ni, nj in get_neighbor_coordinates((i, j), d):
                             if self.board[ni][nj] == '?':
                                 self.board[ni][nj] = 'C'
-                                self.board = query((i, j), self.board, self.mines)
+                                self.board = query((ni, nj), self.board, self.mines)
                                 new_clues = True
                                 for ni2, nj2 in get_neighbor_coordinates((ni, nj), d):
                                     self.num_safe_board[ni2][nj2] += 1
                                     self.num_hidden_board[ni2][nj2] -= 1
         if new_clues and not completed(self.board):
-            return self.infer()
-        return successful_infer
+            self.infer()
 
     def run(self):
         """
@@ -210,24 +222,71 @@ class BasicAgent:
         """
         d = len(self.board)
         while not completed(self.board):
-            if not self.infer():
-                # reveal random cell
-                hidden_coordinates_list = []
-                for i in range(d):
-                    for j in range(d):
-                        if self.board[i][j] == '?':
-                            hidden_coordinates_list.append((i, j))
-                i, j = hidden_coordinates_list[randrange(0, len(hidden_coordinates_list))]
-                self.board = query((i, j), self.board,
-                                   self.mines)
-                if self.board[i][j] == 'X':
-                    # blew up mine, update info
-                    for ni, nj in get_neighbor_coordinates((i, j), d):
+            self.infer()
+            if not completed(self.board):
+                # reveal random cell and update info
+                self.board, (i, j) = random_query(self.board, self.mines)
+                for ni, nj in get_neighbor_coordinates((i, j), d):
+                    if self.board[i][j] == 'X':
+                        # blew up mine, update neighbor's info appropriately
                         self.num_mines_board[ni][nj] += 1
-                        self.num_hidden_board -= 1
-                else:
-                    # new clue, update info
-                    for ni, nj in get_neighbor_coordinates((i, j), d):
+                    else:
+                        # found safe cell, update neighbor's info appropriately
                         self.num_safe_board[ni][nj] += 1
-                        self.num_hidden_board[ni][nj] -= 1
-        print_score(self.board, self.mines)
+                    self.num_hidden_board[ni][nj] -= 1
+        self.score = get_score(self.board, self.mines)
+        print('Score: ' + str(self.score))
+
+
+class ImprovedAgent:
+    def __init__(self, arg1, arg2):
+        """
+        Prepare the info that improved agent needs to make inferences. This can be initialized using d, n or board,
+        mines.
+
+        :param arg1: either d: board dimension, or board: minesweeper board
+        :param arg2: either n: number of mines, or mines: set of mines
+        """
+        if isinstance(arg1, int) and isinstance(arg2, int):
+            d, n = arg1, arg2
+            board, mines = generate_board(d, n)
+        else:
+            board, mines = arg1, arg2
+        self.board = board
+        self.mines = mines
+        d = len(board)
+        self.num_safe_board = [[0 for _ in range(d)] for _ in range(d)]
+        self.num_mines_board = [[0 for _ in range(d)] for _ in range(d)]
+        self.num_hidden_board = [[len(get_neighbor_coordinates((i, j), d)) for j in range(d)] for i in range(d)]
+        # TODO: define some kind of dictionary to hold equations that we can manipulate to infer more than basic agent
+        self.score = 0
+
+    def infer(self):
+        """
+        TODO: use combo of individual cell inference and equations to infer safe and mined cells
+
+        :return: nothing
+        """
+
+    def run(self):
+        """
+        Runs improved agent on the minesweeper board, and prints final score.
+
+        :return: nothing
+        """
+        d = len(self.board)
+        while not completed(self.board):
+            self.infer()
+            if not completed(self.board):
+                # reveal random cell and update info
+                self.board, (i, j) = random_query(self.board, self.mines)
+                for ni, nj in get_neighbor_coordinates((i, j), d):
+                    if self.board[i][j] == 'X':
+                        # blew up mine, update neighbor's info appropriately
+                        self.num_mines_board[ni][nj] += 1
+                    else:
+                        # found safe cell, update neighbor's info appropriately
+                        self.num_safe_board[ni][nj] += 1
+                    self.num_hidden_board[ni][nj] -= 1
+        self.score = get_score(self.board, self.mines)
+        print('Score: ' + str(self.score))
