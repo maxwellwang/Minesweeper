@@ -1,113 +1,45 @@
-from random import randint
-
-
-class Cell:
-    mine = False
-    covered = True
-    clue = 0
-    num_safe = 0
-    num_mines = 0
-    num_hidden = 0
-    safe_flag = False
-    mine_flag = False
-
-    def __init__(self, num_hidden):
-        self.num_hidden = num_hidden
-
-    def __str__(self):
-        if self.covered:
-            if self.safe_flag:
-                return 'S'
-            elif self.mine_flag:
-                return 'F'
-            else:
-                return '.'
-        elif self.mine:
-            return 'M'
-        else:
-            return str(self.clue)
+from random import randrange
 
 
 def valid_coordinates(coordinates, d):
     """
     Checks if coordinates are in bounds.
 
-    :param coordinates: tuple of x, y
+    :param coordinates: tuple of i, j
     :param d: board dimension
     :return: if coordinates are in bounds
     """
-    x, y = coordinates
-    return 0 <= x < d and 0 <= y < d
-
-
-def num_neighbors(coordinates, d):
-    """
-    Calculates number of neighbors around cell.
-
-    :param coordinates: coordinates of cell
-    :param d: dimension of board
-    :return: number of neighbors around cell
-    """
-    x, y = coordinates
-    num = 0
-    for dx in [-1, 0, 1]:
-        for dy in [-1, 0, 1]:
-            if (dx != 0 or dy != 0) and 0 <= x + dx < d and 0 <= y + dy < d:
-                num += 1
-    return num
-
-
-def get_neighbors(coordinates, d):
-    """
-    Gets coordinates of neighbors around cell.
-
-    :param coordinates: coordinates of cell
-    :param d: dimension of board
-    :return: coordinates of neighbors around cell
-    """
-    x, y = coordinates
-    neighbors = set()
-    for dx in [-1, 0, 1]:
-        for dy in [-1, 0, 1]:
-            if (dx != 0 or dy != 0) and 0 <= x + dx < d and 0 <= y + dy < d:
-                neighbors.add((x + dx, y + dy))
-    return neighbors
+    i, j = coordinates
+    return 0 <= i < d and 0 <= j < d
 
 
 def generate_board(d, n):
     """
-    Generates a random d x d board containing n mines. Each cell will keep track of:
-    1. whether or not it is a mine or safe.
-    2. whether or not it is currently covered.
-    3. if safe, the number of mines surrounding it indicated by the clue.
-    4. the number of safe squares identified around it.
-    5. the number of mines identified around it.
-    6. the number of hidden squares around it.
-    7. if it is flagged as safe.
-    8. if it is flagged as a mine.
+    Generates a random d x d board containing n mines.
 
     :param d: dimension of board
     :param n: number of mines
-    :return: d x d board containing n mines, set of mine coordinates
+    :return: completely covered d x d board, set of mine coordinates
     """
     if d <= 0:
-        print('Invalid dimension')
-        return None
+        print(str(d) + ' is an invalid dimension')
+        return
     if n < 0 or n >= d * d:
-        print('Invalid number of mines')
-        return None
+        print(str(n) + ' is an invalid number of mines')
+        return
 
-    board = [[Cell(num_neighbors((x, y), d)) for y in range(d)] for x in range(d)]
+    board = []
+    coordinates_list = []
+    for i in range(d):
+        board.append([])
+        for j in range(d):
+            board[i].append('?')
+            coordinates_list.append((i, j))
 
     mines = set()
-    while len(mines) < n:
-        x, y = randint(0, d - 1), randint(0, d - 1)
-        if (x, y) not in mines:
-            mines.add((x, y))
-            board[x][y].mine = True
-            for neighbor in get_neighbors((x, y), d):
-                nx, ny = neighbor
-                board[nx][ny].clue += 1
+    for _ in range(n):
+        i, j = coordinates_list.pop(randrange(0, len(coordinates_list)))
+        mines.add((i, j))
 
     return board, mines
 
@@ -125,34 +57,65 @@ def print_board(board):
 
 def completed(board):
     """
-    Checks if all safe cells have been queried.
+    Checks if all cells are uncovered, marked as clear, or marked as mined.
 
     :param board: minesweeper board
     :return: if board has been completed
     """
     d = len(board)
-    for x in range(d):
-        for y in range(d):
-            cell = board[x][y]
-            if cell.covered and not cell.safe_flag and not cell.mine_flag:
+    for row in board:
+        for cell in row:
+            if cell == '?':
                 return False
     return True
 
 
-def score(board, mines):
+def print_score(board, mines):
     """
-    Calculates score = # correctly flagged mines / # mines.
+    Calculates and prints score = # correctly flagged mines / # mines.
+
     :param board: minesweeper board
     :param mines: set of mine coordinates
-    :return: # correctly flagged mines / # mines
+    :return: nothing
     """
     num_correctly_flagged_mines = 0
-    for coordinates in mines:
-        x, y = coordinates
-        cell = board[x][y]
-        if cell.mine_flag:
+    for i, j in mines:
+        if board[i][j] == 'M':
             num_correctly_flagged_mines += 1
-    return num_correctly_flagged_mines / len(mines)
+    score = round(num_correctly_flagged_mines / len(mines), 2)
+    print('Score: ' + str(score))
+
+
+def get_neighbor_coordinates(coordinates, d):
+    """
+    Get the coordinates of all neighbors.
+
+    :param coordinates: i, j tuple
+    :param d: board dimension
+    :return: set of neighbor coordinates
+    """
+    neighbor_coordinates = set()
+    i, j = coordinates
+    for di in [-1, 0, 1]:
+        for dj in [-1, 0, 1]:
+            ni, nj = i + di, j + dj
+            if (ni, nj) != (i, j) and valid_coordinates((ni, nj), d):
+                neighbor_coordinates.add((ni, nj))
+    return neighbor_coordinates
+
+
+def get_clue(coordinates, mines, d):
+    """
+    Just queried safe cell, now get how many mines in neighbors.
+
+    :param coordinates: i, j tuple
+    :param mines: set of mines
+    :return: number of mines around coordinates
+    """
+    clue = 0
+    for neighbor_coordinates in get_neighbor_coordinates(coordinates, d):
+        clue += 1 if neighbor_coordinates in mines else 0
+    return clue
 
 
 def query(coordinates, board, mines):
@@ -165,14 +128,16 @@ def query(coordinates, board, mines):
     :return: new board
     """
     if not valid_coordinates(coordinates, len(board)):
-        print('Invalid coordinates')
+        print(str(coordinates) + ' are invalid coordinates')
         return board
-    x, y = coordinates
-    cell = board[x][y]
-    if not cell.covered:
-        print('Cell was already queried')
+    i, j = coordinates
+    if board[i][j] != '?':
+        print(str(coordinates) + ' was already queried')
         return board
-    cell.covered = False
-    if completed(board):
-        print(score(board, mines))
+
+    if (i, j) in mines:
+        board[i][j] = 'X'
+    else:
+        board[i][j] = str(get_clue((i, j), mines, len(board)))
+
     return board
