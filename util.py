@@ -1,4 +1,5 @@
 from random import randrange
+import sympy
 
 
 def valid_coordinates(coordinates, d):
@@ -235,7 +236,79 @@ class BasicAgent:
                         self.num_safe_board[ni][nj] += 1
                     self.num_hidden_board[ni][nj] -= 1
         self.score = get_score(self.board, self.mines)
+        # print_board(self.board)
         print('Score: ' + str(self.score))
+
+
+class Info:
+    def __init__(self, mines=None, safe=None):
+        if safe is None:
+            safe = set()
+        if mines is None:
+            mines = set()
+        self.mines = mines
+        self.safe = safe
+
+    def __repr__(self):
+        return "Mines: " + ' '.join(str(mine) for mine in self.mines) + "\n" + "Safe: " + ' '.join(
+            str(s) for s in self.safe)
+
+    def combine(self, info):
+        if len(info.mines) + len(info.safe) != len(info.mines.union(info.safe)):
+            raise Exception("Some cells are both safe and mines!")
+        if len(self.mines.intersection(info.safe)) != 0:
+            raise Exception("Clue conflict 1")
+        if len(self.safe.intersection(info.mines)) != 0:
+            raise Exception("Clue conflict 2")
+        self.mines = self.mines.union(info.mines)
+        self.safe = self.safe.union(info.safe)
+
+
+class ClueSolver:
+    class Clue:
+        def __init__(self, num_mines, hidden_cells, mined_cells):
+            self.num_mines = num_mines - mined_cells
+            self.hidden_cells = hidden_cells
+
+        # TODO: Optimize this so doesn't always use dim^2 columns
+        def gen_row(self, dim):
+            row = [0] * (dim * dim + 1)
+            for cell in self.hidden_cells:
+                row[cell[0] * dim + cell[1]] = 1
+            row[-1] = self.num_mines
+            return row
+
+        def solve(self):
+            if self.num_mines == len(self.hidden_cells):
+                return Info(mines=self.hidden_cells)
+            elif self.num_mines == 0:
+                return Info(safe=self.hidden_cells)
+            else:
+                return Info()
+
+    def __init__(self, dim):
+        self.clues = []
+        self.dim = dim
+
+    def add_clue(self, num_mines, hidden_cells, mined_cells):
+        if len(hidden_cells) == 0:
+            return
+        self.clues.append(self.Clue(num_mines, hidden_cells, mined_cells))
+
+    def solve(self):
+        mat = []
+        for clue in self.clues:
+            mat.append(clue.gen_row(self.dim))
+        sympy_mat = sympy.Matrix(mat)
+        sympy_mat = sympy_mat.rref()[0]
+
+        sol = Info()
+        for row in sympy_mat.tolist():
+            if sum([i for i in row[:-1] if i < 0]) == 0:
+                clue = self.Clue(row[-1], set((i // self.dim, i % self.dim) for i in range(len(row) - 1) if row[i] == 1), sum([i - 1 for i in row[:-1] if i > 1]))
+                sol.combine(clue.solve())
+
+        return sol
 
 
 class ImprovedAgent:
@@ -254,19 +327,42 @@ class ImprovedAgent:
             board, mines = arg1, arg2
         self.board = board
         self.mines = mines
-        d = len(board)
-        self.num_safe_board = [[0 for _ in range(d)] for _ in range(d)]
-        self.num_mines_board = [[0 for _ in range(d)] for _ in range(d)]
-        self.num_hidden_board = [[len(get_neighbor_coordinates((i, j), d)) for j in range(d)] for i in range(d)]
-        # TODO: define some kind of dictionary to hold equations that we can manipulate to infer more than basic agent
         self.score = 0
+        self.dim = len(board)
 
     def infer(self):
         """
-        TODO: use combo of individual cell inference and equations to infer safe and mined cells
 
         :return: nothing
         """
+        solver = ClueSolver(self.dim)
+        for i in range(self.dim):
+            for j in range(self.dim):
+                if self.board[i][j].isdigit():
+                    hidden_cells = set()
+                    mined_cells = 0
+                    for pair in get_neighbor_coordinates((i, j), self.dim):
+                        cell = self.board[pair[0]][pair[1]]
+                        if cell == 'M' or cell == 'X':
+                            mined_cells += 1
+                        elif cell == '?':
+                            hidden_cells.add(pair)
+                        elif not cell.isdigit():
+                            raise Exception("Unexpected cell value: " + cell)
+                    solver.add_clue(int(self.board[i][j]), hidden_cells, mined_cells)
+        solution = solver.solve()
+        new_clues = False
+        if len(solution.mines) != 0:
+            new_clues = True
+            for pair in solution.mines:
+                self.board[pair[0]][pair[1]] = 'M'
+        if len(solution.safe) != 0:
+            for pair in solution.safe:
+                self.board = query(pair, self.board, self.mines)
+            new_clues = True
+
+        if new_clues and not completed(self.board):
+            self.infer()
 
     def run(self):
         """
@@ -274,19 +370,10 @@ class ImprovedAgent:
 
         :return: nothing
         """
-        d = len(self.board)
         while not completed(self.board):
             self.infer()
             if not completed(self.board):
                 # reveal random cell and update info
                 self.board, (i, j) = random_query(self.board, self.mines)
-                for ni, nj in get_neighbor_coordinates((i, j), d):
-                    if self.board[i][j] == 'X':
-                        # blew up mine, update neighbor's info appropriately
-                        self.num_mines_board[ni][nj] += 1
-                    else:
-                        # found safe cell, update neighbor's info appropriately
-                        self.num_safe_board[ni][nj] += 1
-                    self.num_hidden_board[ni][nj] -= 1
         self.score = get_score(self.board, self.mines)
         print('Score: ' + str(self.score))
