@@ -502,7 +502,6 @@ class ImprovedAgent:
 
         # Solves all clues
         solution, next_cell = solver.solve()
-        new_clues = False
 
         # If we determine cells as mines, mark them as such
         for pair in solution.mines:

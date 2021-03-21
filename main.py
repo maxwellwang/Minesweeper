@@ -1,5 +1,4 @@
 from util import *
-import time
 import concurrent.futures
 import matplotlib.pyplot as plt
 
@@ -10,7 +9,7 @@ def density_plot():
     # Plot parameters (Dimension of minesweeper board, number of trials per data point, number of densities to test)
     dim = 30
     num_trials = 20
-    p_steps = 20
+    p_steps = 40
     bonus = True  # Comment / un comment agents within futures as well
 
     # Submit all games to the executor
@@ -24,8 +23,6 @@ def density_plot():
                 # (-1, True)                             # -> Bonus: Optimized Selection Algorithm
             ]:
                 futures[exec.submit(density_trial, dim, round(dim * dim * p / p_steps), agent)] = (p / p_steps, agent)
-
-    t = time.time()
 
     # Data which will be plotted
     density = [[p / p_steps + i / 200 for p in range(p_steps)] for i in range(3)]
@@ -41,9 +38,7 @@ def density_plot():
         else:
             results[0][round(futures[f][0] * p_steps)] += f.result() / num_trials
 
-    print("Time: " + str(time.time() - t))
-
-    # Plot the results, Basic, Improved, and Bonus are Red, Green and Blue repsectively
+    # Plot the results, Basic, Improved, and Bonus are Red, Green and Blue respectively
     for i in range(3 if bonus else 2):
         plt.scatter(density[i], results[i], s=5, c=["Red", "Green", "Blue"][i])
     plt.scatter([0, 1], [0, 1], s=0)
